@@ -18,6 +18,9 @@ import java.util.Set;
 public class proxyd {
 	
 	static final int DEFAULT_SERVER_PORT = 80;
+	static final String REQUEST_END = "\r\n\r\n";
+	static final String LINE_END = "\r\n";
+	static final int CACHE_TIME = 30000;
 	
 	static int portNum = 5023;
 	
@@ -57,8 +60,8 @@ public class proxyd {
 	}
 	
 	private static void run(ServerSocket clientSocket) throws IOException {
-		DNSCacheThread dnsThread = new DNSCacheThread();
-		dnsThread.start();
+		DNSCacheThread cacheThread = new DNSCacheThread();
+		cacheThread.start();
 	
 		while(true) {
 			Socket connectionSocket = clientSocket.accept(); 
@@ -82,7 +85,7 @@ public class proxyd {
 		}
 		String clientInStr = new String(inBuffBytes);
 		
-		String [] requests = clientInStr.split("\r\n\r\n");
+		String [] requests = clientInStr.split(REQUEST_END);
 		
 		for(String request : requests) {
 			if(isBlank(request)) {
@@ -95,12 +98,13 @@ public class proxyd {
 				break;
 			}
 			
-			String[] lines = request.split("\r\n");
+			String[] lines = request.split(LINE_END);
 			
 			//do some minimal parsing!
 			boolean connectFound = false;
+			String line;
 			for(int i = 0; i < lines.length; i++) {
-				String line = lines[i];
+				line = lines[i];
 				
 				//we'll want to close this connection once we've received the data
 				if(line.equalsIgnoreCase("connection: keep-alive") ||
@@ -112,14 +116,14 @@ public class proxyd {
 			
 			StringBuffer sb = new StringBuffer();
 			for(int i = 0; i < lines.length; i++) {
-				sb.append(lines[i] + "\r\n");
+				sb.append(lines[i] + LINE_END);
 			}
 			if(!connectFound) {
-				sb.append("Connection: close\r\n");
+				sb.append("Connection: close" + LINE_END);
 			}
 			request = sb.toString();
 			
-			request += "\r\n\r\n";
+			request += REQUEST_END;
 			byte[] requestBytes = request.getBytes();
 			
 			//get the IP address
@@ -154,7 +158,7 @@ public class proxyd {
 	private static String getValue(String request, String header) {
 		//get the value of the given header field
 		int startIndex = request.indexOf(header) + header.length();
-		int endIndex = request.indexOf("\r\n", startIndex);
+		int endIndex = request.indexOf(LINE_END, startIndex);
 		
 		return request.substring(startIndex, endIndex);
 	}
@@ -175,7 +179,7 @@ public class proxyd {
 	
 	protected static void handleDNS() {
 		//remove mappings that were created >= 30 seconds ago
-		long longestTime = new Date().getTime() - 30000;
+		long longestTime = new Date().getTime() - CACHE_TIME;
 		
 		Set<Long> times = dnsTimes.keySet();
 		Iterator<Long> itr = times.iterator();
@@ -205,7 +209,7 @@ public class proxyd {
 		//keep trying to read from the server until it sends something
 		while(isBlank(new String(responseBytes))) {
 			//read input from the server
-			byte nextByte = (byte) serverInStream.read();
+			byte nextByte = (byte)serverInStream.read();
 			while(nextByte != -1) {
 				serverInBuffer.put(nextByte);
 				nextByte = (byte)serverInStream.read();
@@ -223,6 +227,7 @@ public class proxyd {
 	}
 	
 	private static boolean isBlank(String str) {
+		// if there's nothing but white space, consider the string blank
 		return str.trim().length() == 0;
 	}
 }
